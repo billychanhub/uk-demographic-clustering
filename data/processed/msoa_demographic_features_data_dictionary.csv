@@ -1,0 +1,33 @@
+column,description,source_or_derivation
+geo_code,MSOA 2021 geography code. Each code represents one Middle layer Super Output Area in England or Wales.,Census 2021 MSOA geography from Nomis
+geo_name,MSOA 2021 geography name.,Census 2021 MSOA geography from Nomis
+latitude,Latitude of the MSOA centroid in WGS84 coordinates.,ONS Open Geography Portal MSOA 2021 centroid attributes
+longitude,Longitude of the MSOA centroid in WGS84 coordinates.,ONS Open Geography Portal MSOA 2021 centroid attributes
+centroid_easting,British National Grid easting for the MSOA centroid.,ONS Open Geography Portal MSOA 2021 centroid attributes
+centroid_northing,British National Grid northing for the MSOA centroid.,ONS Open Geography Portal MSOA 2021 centroid attributes
+centroid_source,Text label recording the source used for the centroid coordinates.,Added during centroid lookup step
+total_population,Total usual resident population in the MSOA.,Census 2021 population lookup from Nomis
+children_count_0_14,Number of residents aged 0 to 14.,"Sum of Census 2021 five-year age bands 0-4, 5-9, and 10-14"
+children_share_0_14,Share of residents aged 0 to 14.,children_count_0_14 divided by total population in the age table
+young_adult_count_15_24,Number of residents aged 15 to 24.,Sum of Census 2021 five-year age bands 15-19 and 20-24
+young_adult_share_15_24,Share of residents aged 15 to 24.,young_adult_count_15_24 divided by total population in the age table
+core_family_adult_count_25_44,"Number of residents aged 25 to 44, used as a broad proxy for core parent and decision-maker age groups.","Sum of Census 2021 five-year age bands 25-29, 30-34, 35-39, and 40-44"
+core_family_adult_share_25_44,Share of residents aged 25 to 44.,core_family_adult_count_25_44 divided by total population in the age table
+midlife_adult_count_45_64,Number of residents aged 45 to 64.,"Sum of Census 2021 five-year age bands 45-49, 50-54, 55-59, and 60-64"
+midlife_adult_share_45_64,Share of residents aged 45 to 64.,midlife_adult_count_45_64 divided by total population in the age table
+older_adult_count_65_plus,Number of residents aged 65 and over.,Sum of Census 2021 five-year age bands from 65-69 through 90+
+older_adult_share_65_plus,Share of residents aged 65 and over.,older_adult_count_65_plus divided by total population in the age table
+total_households,Total number of households in the MSOA.,Census 2021 household composition table from Nomis
+households_with_dependent_children,"Number of households with dependent children, regardless of parental marital status.",Sum of relevant Census 2021 household composition categories
+family_household_share,Share of households that have dependent children.,households_with_dependent_children divided by total_households
+households_deprived,Number of households deprived in at least one measured dimension.,Sum of Census 2021 deprivation categories for one or more deprivation dimensions
+deprived_household_share,Share of households deprived in at least one measured dimension.,households_deprived divided by the deprivation table household total
+households_not_deprived,Number of households not deprived in any measured dimension.,Census 2021 household deprivation category: not deprived in any dimension
+not_deprived_household_share,Share of households not deprived in any measured dimension.,households_not_deprived divided by the deprivation table household total
+households_no_car_or_van,Number of households with no car or van available.,Census 2021 car or van availability table from Nomis
+households_with_car_or_van,Number of households with at least one car or van available.,"Sum of Census 2021 car availability categories for one, two, or three-plus cars/vans"
+car_access_household_share,Share of households with at least one car or van available.,households_with_car_or_van divided by the car availability table household total
+population_density_per_sq_km,Population density measured as residents per square kilometre.,Census 2021 population density table from Nomis
+residents_social_grade_ab_c1,Number of residents in approximated social grades AB or C1.,Sum of Census 2021 approximated social grade AB and C1 categories
+ab_c1_social_grade_share,"Share of residents in approximated social grades AB or C1, used as a simple public proxy for higher spending power.",residents_social_grade_ab_c1 divided by the social grade table total
+country,Country label for the MSOA.,"Derived from the first letter of geo_code: E = England, W = Wales"

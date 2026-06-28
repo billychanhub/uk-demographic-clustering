@@ -1,0 +1,33 @@
+attraction_name,operator,attraction_category,attraction_type,city,postcode,family_friendly,indoor_outdoor,children_count_0_14,young_adult_count_15_24,core_family_adult_count_25_44,midlife_adult_count_45_64,older_adult_count_65_plus
+Paultons Park,Paultons Park Ltd,Theme Park,Theme Park,Romsey,SO51 6AL,Yes,Outdoor,1,0,1,1,0
+Drayton Manor Resort,Looping Group,Theme Park Resort,Theme Park,Tamworth,B78 3TW,Yes,Outdoor,1,0,1,1,0
+Flamingo Land Resort,Flamingo Land,Theme Park & Zoo,Theme Park + Zoo,Malton,YO17 6UX,Yes,Mixed,1,0,1,1,0
+Blackpool Pleasure Beach,Pleasure Beach Resort,Theme Park,Theme Park,Blackpool,FY4 1EZ,Partial,Outdoor,0,1,1,1,0
+Adventure Island,Stockvale Group,Theme Park,Theme Park,Southend-on-Sea,SS1 1EE,Yes,Outdoor,1,0,1,1,0
+Gulliver's World,Gulliver's,Theme Park,Family Theme Park,Warrington,WA5 9YZ,Yes,Outdoor,1,0,1,0,0
+Gulliver's Kingdom,Gulliver's,Theme Park,Family Theme Park,Matlock Bath,DE4 3PG,Yes,Outdoor,1,0,1,0,0
+Gulliver's Land,Gulliver's,Theme Park,Family Theme Park,Milton Keynes,MK15 0DT,Yes,Outdoor,1,0,1,0,0
+Dreamland Margate,Dreamland Trust,Amusement Park,Amusement Park,Margate,CT9 1XJ,Yes,Outdoor,0,1,1,1,0
+Chester Zoo,North of England Zoological Society,Zoo,Zoo,Chester,CH2 1EU,Yes,Mixed,1,1,1,1,1
+ZSL London Zoo,Zoological Society of London,Zoo,Zoo,London,NW1 4RY,Yes,Mixed,1,1,1,1,1
+ZSL Whipsnade Zoo,Zoological Society of London,Zoo,Zoo,Dunstable,LU6 2LF,Yes,Mixed,1,1,1,1,1
+Yorkshire Wildlife Park,Yorkshire Wildlife Park,Zoo,Wildlife Park,Doncaster,DN9 3QY,Yes,Outdoor,1,0,1,1,0
+Cotswold Wildlife Park,Cotswold Wildlife Park,Zoo,Wildlife Park,Burford,OX18 4JP,Yes,Outdoor,1,0,1,1,0
+Twycross Zoo,Twycross Zoo,Zoo,Zoo,Atherstone,CV9 3PX,Yes,Mixed,1,0,1,1,0
+Marwell Zoo,Marwell Wildlife,Zoo,Zoo,Winchester,SO21 1JH,Yes,Outdoor,1,0,1,1,0
+Colchester Zoo,Colchester Zoological Society,Zoo,Zoo,Colchester,CO3 0SL,Yes,Mixed,1,0,1,1,0
+National Marine Aquarium,Ocean Conservation Trust,Aquarium,Aquarium,Plymouth,PL4 0LF,Yes,Indoor,1,0,1,1,0
+Blue Reef Portsmouth,Blue Reef Leisure,Aquarium,Aquarium,Portsmouth,PO5 3PB,Yes,Indoor,1,0,1,1,0
+Blue Reef Newquay,Blue Reef Leisure,Aquarium,Aquarium,Newquay,TR7 1DU,Yes,Indoor,1,0,1,1,0
+Bristol Aquarium,Bristol Aquarium,Aquarium,Aquarium,Bristol,BS1 5TT,Yes,Indoor,1,0,1,1,0
+The Deep,The Deep,Aquarium,Aquarium,Hull,HU9 1TU,Yes,Indoor,1,0,1,1,0
+i360 Brighton,Brighton i360,Observation Tower,Observation Tower,Brighton,BN1 2LN,Partial,Outdoor,0,1,1,1,1
+Emirates Spinnaker Tower,Portsmouth City Council,Observation Tower,Observation Tower,Portsmouth,PO1 3TT,Yes,Mixed,1,1,1,1,1
+National Space Centre,National Space Centre,Science Centre,Science Museum,Leicester,LE4 5NS,Yes,Indoor,1,0,1,1,0
+Eureka!,Eureka!,Children's Museum,Interactive Museum,Halifax,HX1 2NE,Yes,Indoor,1,0,1,0,0
+Thinktank Birmingham,Birmingham Museums,Science Centre,Science Museum,Birmingham,B4 7XG,Yes,Indoor,1,0,1,1,0
+Eden Project,Eden Project,Botanical Attraction,Nature Experience,Cornwall,PL24 2SG,Yes,Mixed,1,0,1,1,0
+Beamish Museum,Beamish Museum,Heritage Attraction,Living Museum,Durham,DH9 0RG,Yes,Outdoor,1,0,1,1,0
+Longleat,Longleat Enterprises,Safari Park,Safari Park,Warminster,BA12 7NW,Yes,Outdoor,1,0,1,1,0
+Woburn Safari Park,Woburn Enterprises,Safari Park,Safari Park,Woburn,MK43 0TU,Yes,Outdoor,1,0,1,1,0
+West Midland Safari Park,West Midland Safari Park,Safari Park,Safari Park,Bewdley,DY12 1LF,Yes,Outdoor,1,0,1,1,0

@@ -1,0 +1,26 @@
+# Core notebook environment
+jupyter
+ipykernel
+
+# Data access and tabular analysis
+pandas
+numpy
+requests
+
+# Geospatial data handling for MSOA boundaries, distance features, and maps
+geopandas
+shapely
+pyproj
+
+# Modelling and scoring
+scikit-learn
+scipy
+geopy
+
+# Visualisation
+matplotlib
+seaborn
+streamlit
+
+# Excel export for stakeholder-friendly outputs
+openpyxl

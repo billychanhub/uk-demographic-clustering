@@ -1,0 +1,21 @@
+﻿attraction_name_official,brand_official,business_division_official,city_official,postcode_official,latitude,longitude,experience_category_inferred,indoor_outdoor_inferred,target_age_group_inferred,family_friendly_inferred
+Alton Towers Resort,Alton Towers,Resort Theme Parks,Alton,ST10 4DB,52.9859259,-1.8875917,Thrill Theme Park,Mixed,children_0_14|young_adults_15_24|core_family_adults_25_44,Yes
+Thorpe Park,Thorpe Park,Resort Theme Parks,Chertsey,KT16 8PN,51.4051002,-0.5329906,Thrill Theme Park,Outdoor,young_adults_15_24|core_family_adults_25_44,Yes
+Chessington World of Adventures Resort,Chessington,Resort Theme Parks,Chessington,KT9 2NE,51.3485016,-0.3215835,Family Theme Park,Mixed,children_0_14|core_family_adults_25_44,Yes
+LEGOLAND Windsor Resort,LEGOLAND,Resort Theme Parks,Windsor,SL4 4AY,51.4638338,-0.6526024,Family Theme Park,Outdoor,children_0_14|core_family_adults_25_44,Yes
+Warwick Castle,Warwick Castle,Gateway Attractions,Warwick,CV34 6AU,52.2795,-1.5849,Heritage Attraction,Mixed,children_0_14|core_family_adults_25_44|midlife_adults_45_64,Yes
+London Eye,London Eye,Gateway Attractions,London,SE1 7PB,51.5031864,-0.1220941,Urban Icon Attraction,Outdoor,all_age_groups,Yes
+Madame Tussauds London,Madame Tussauds,Gateway Attractions,London,NW1 5LR,51.5230052,-0.1569882,Urban Icon Attraction,Indoor,all_age_groups,Yes
+London Dungeon,The Dungeons,Gateway Attractions,London,SE1 7PB,51.5025119,-0.1213377,Young Adult Immersive,Indoor,young_adults_15_24|core_family_adults_25_44,No
+Shrek's Adventure! London,Shrek's Adventure!,Gateway Attractions,London,SE1 7PB,51.5018817,-0.1219483,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+Cadbury World,Cadbury World,Gateway Attractions,Birmingham,B30 1JR,52.4287945,-1.9340002,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44|midlife_adults_45_64,Yes
+SEA LIFE London Aquarium,SEA LIFE,Gateway Attractions,London,SE1 7PB,51.501558,-0.1220809,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Birmingham,SEA LIFE,Gateway Attractions,Birmingham,B1 2HL,52.4787122,-1.9158499,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Manchester,SEA LIFE,Gateway Attractions,Manchester,M17 8AS,53.4667466,-2.3448962,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Blackpool,SEA LIFE,Gateway Attractions,Blackpool,FY1 5AA,53.8128,-3.055,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Brighton,SEA LIFE,Gateway Attractions,Brighton,BN2 1TB,50.8196056,-0.1383273,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Weymouth,SEA LIFE,Gateway Attractions,Weymouth,DT4 7SX,50.6144,-2.4543,Family Discovery Attraction,Mixed,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Great Yarmouth,SEA LIFE,Gateway Attractions,Great Yarmouth,NR30 3AH,52.6074,1.729,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Hunstanton,SEA LIFE,Gateway Attractions,Hunstanton,PE36 5BH,52.939,0.489,Family Discovery Attraction,Mixed,children_0_14|core_family_adults_25_44,Yes
+SEA LIFE Scarborough,SEA LIFE,Gateway Attractions,Scarborough,YO12 6RP,54.3012017,-0.4123713,Family Discovery Attraction,Indoor,children_0_14|core_family_adults_25_44,Yes
+The York Dungeon,The Dungeons,Gateway Attractions,York,YO1 9RD,53.9569546,-1.084444,Young Adult Immersive,Indoor,young_adults_15_24|core_family_adults_25_44,No
