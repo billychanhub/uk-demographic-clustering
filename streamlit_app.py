@@ -169,7 +169,10 @@ def load_data() -> pd.DataFrame:
 
     data = data.sort_values("opportunity_rank").reset_index(drop=True)
     data["area_name"] = data["geo_name"].str.replace(r"\s+\d+$", "", regex=True)
-    data["priority_1_flag"] = data.get("opportunity_tier", "").eq("Priority 1 - strongest opportunity")
+    if "opportunity_tier" in data.columns:
+        data["priority_1_flag"] = data["opportunity_tier"].eq("Priority 1 - strongest opportunity")
+    else:
+        data["priority_1_flag"] = data["opportunity_rank"].le(max(1, round(len(data) * 0.10)))
     return data
 
 
@@ -202,12 +205,15 @@ def format_table(data: pd.DataFrame, rows: int = 10) -> pd.DataFrame:
         "overall_opportunity_score",
         "key_contributing_driver",
         "recommended_attraction_name",
-        "recommended_product_focus",
+        "recommended_commercial_play",
+        "commercial_play_rationale",
     ]
     optional_columns = [
         "recommended_activation",
         "recommended_attraction_category",
         "recommended_attraction_distance_km",
+        "merlin_attractions_within_45km",
+        "illustrative_revenue_opportunity_1pct_gbp",
     ]
     columns = [column for column in preferred_columns + optional_columns if column in data.columns]
     return data.loc[:, columns].head(rows)
@@ -313,17 +319,17 @@ def answer_question(question: str, data: pd.DataFrame) -> Tuple[str, pd.DataFram
     return response, format_table(filtered.sort_values("opportunity_rank"), 10)
 
 
-def tier_headroom_chart(data: pd.DataFrame) -> alt.Chart:
-    headroom = (
+def tier_population_chart(data: pd.DataFrame) -> alt.Chart:
+    tier_population = (
         data.groupby("opportunity_tier", as_index=False)
         .agg(total_population=("total_population", "sum"), msoa_count=("geo_code", "count"))
         .assign(opportunity_tier=lambda frame: pd.Categorical(frame["opportunity_tier"], TIER_ORDER, ordered=True))
         .sort_values("opportunity_tier")
     )
-    headroom["population_millions"] = headroom["total_population"] / 1_000_000
+    tier_population["population_millions"] = tier_population["total_population"] / 1_000_000
 
     return (
-        alt.Chart(headroom)
+        alt.Chart(tier_population)
         .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
         .encode(
             x=alt.X("population_millions:Q", title="Addressable population, millions"),
@@ -340,6 +346,36 @@ def tier_headroom_chart(data: pd.DataFrame) -> alt.Chart:
             ],
         )
         .properties(height=210)
+    )
+
+
+def commercial_play_chart(data: pd.DataFrame) -> alt.Chart:
+    play_summary = (
+        data.groupby("recommended_commercial_play", as_index=False)
+        .agg(
+            msoa_count=("geo_code", "count"),
+            revenue_scenario=("illustrative_revenue_opportunity_1pct_gbp", "sum"),
+            mean_score=("overall_opportunity_score", "mean"),
+        )
+        .sort_values("revenue_scenario", ascending=False)
+    )
+    play_summary["revenue_scenario_millions"] = play_summary["revenue_scenario"] / 1_000_000
+
+    return (
+        alt.Chart(play_summary)
+        .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
+        .encode(
+            x=alt.X("revenue_scenario_millions:Q", title="Illustrative revenue opportunity, GBP m"),
+            y=alt.Y("recommended_commercial_play:N", sort="-x", title=""),
+            color=alt.value(MERLIN_GOLD),
+            tooltip=[
+                alt.Tooltip("recommended_commercial_play:N", title="Commercial play"),
+                alt.Tooltip("msoa_count:Q", title="MSOAs", format=","),
+                alt.Tooltip("revenue_scenario_millions:Q", title="Revenue scenario, GBP m", format=".2f"),
+                alt.Tooltip("mean_score:Q", title="Mean score", format=".1f"),
+            ],
+        )
+        .properties(height=260)
     )
 
 
@@ -411,8 +447,8 @@ top_attraction = (
 st.markdown(
     """
     <div class="hero">
-        <h1>Merlin UK Opportunity Explorer</h1>
-        <p>Attraction-led view of the strongest MSOA opportunities, designed for executive prioritisation and media activation planning.</p>
+        <h1>Merlin Growth Opportunity Explorer</h1>
+        <p>Attraction-led view of where to prioritise acquisition, repeat visitation, short breaks and multi-attraction cluster marketing.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -427,6 +463,9 @@ with st.sidebar:
     segment_options = ["All segments"] + sorted(df["segment_label"].dropna().unique().tolist())
     selected_segment = st.selectbox("Customer segment", segment_options)
 
+    play_options = ["All commercial plays"] + sorted(df["recommended_commercial_play"].dropna().unique().tolist())
+    selected_play = st.selectbox("Commercial play", play_options)
+
     search_text = st.text_input("Search geography")
     max_rank = int(df["opportunity_rank"].max())
     rank_limit = st.slider("Include opportunity ranks up to", 1, max_rank, min(1000, max_rank))
@@ -435,6 +474,8 @@ selected_df = df.loc[df["recommended_attraction_name"].eq(selected_attraction)].
 filtered_df = selected_df.loc[selected_df["opportunity_rank"].le(rank_limit)].copy()
 if selected_segment != "All segments":
     filtered_df = filtered_df.loc[filtered_df["segment_label"].eq(selected_segment)]
+if selected_play != "All commercial plays":
+    filtered_df = filtered_df.loc[filtered_df["recommended_commercial_play"].eq(selected_play)]
 if search_text:
     filtered_df = filtered_df.loc[filtered_df["geo_name"].str.contains(search_text, case=False, na=False)]
 
@@ -450,25 +491,28 @@ selected_population = selected_df["total_population"].sum()
 best_rank = int(selected_df["opportunity_rank"].min())
 mean_score = selected_df["overall_opportunity_score"].mean()
 median_distance = selected_df["recommended_attraction_distance_km"].median() if "recommended_attraction_distance_km" in selected_df else None
+repeat_visit_msoas = int(selected_df["annual_pass_repeat_visit_flag"].sum())
+cluster_msoas = int(selected_df["cluster_marketing_flag"].sum())
+revenue_scenario = selected_df["illustrative_revenue_opportunity_1pct_gbp"].sum()
 
 metric_cols = st.columns(5)
 with metric_cols[0]:
     metric_card("Priority 1 MSOAs", f"{len(priority_1):,}", "Strongest activation shortlist", MERLIN_GOLD)
 with metric_cols[1]:
-    metric_card("Priority 1 population", compact_number(priority_1_population), "Immediate headroom to validate", MERLIN_AQUA)
+    metric_card("Repeat visit MSOAs", f"{repeat_visit_msoas:,}", "Annual pass candidates within 45km", MERLIN_AQUA)
 with metric_cols[2]:
-    metric_card("Total opportunity population", compact_number(selected_population), "All MSOAs aligned to attraction", MERLIN_BLUE)
+    metric_card("Cluster MSOAs", f"{cluster_msoas:,}", "2+ Merlin attractions within 45km", MERLIN_BLUE)
 with metric_cols[3]:
-    metric_card("Best national rank", f"#{best_rank:,}", "Best matching MSOA", MERLIN_PURPLE)
+    metric_card("Revenue scenario", f"£{compact_number(revenue_scenario)}", "1% penetration x £33 RPV x score", MERLIN_PURPLE)
 with metric_cols[4]:
     distance_note = f"Median recommended distance {median_distance:.0f} km" if median_distance is not None else "Distance not available"
-    metric_card("Mean score", f"{mean_score:.1f}", distance_note, "#7b61ff")
+    metric_card("Mean GOI", f"{mean_score:.1f}", distance_note, "#7b61ff")
 
 chart_col, map_col = st.columns([1.08, 0.92])
 with chart_col:
     st.markdown('<div class="section-panel">', unsafe_allow_html=True)
-    st.subheader("Growth Headroom by Opportunity Tier")
-    st.altair_chart(tier_headroom_chart(selected_df), use_container_width=True)
+    st.subheader("Addressable Population by Opportunity Tier")
+    st.altair_chart(tier_population_chart(selected_df), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 with map_col:
@@ -487,8 +531,11 @@ with area_col:
     st.altair_chart(area_bar_chart(selected_df), use_container_width=True)
 
 with segment_col:
-    st.subheader("Customer Segment Mix")
-    st.altair_chart(segment_mix_chart(selected_df), use_container_width=True)
+    st.subheader("Commercial Play Mix")
+    st.altair_chart(commercial_play_chart(selected_df), use_container_width=True)
+
+st.subheader("Customer Segment Mix")
+st.altair_chart(segment_mix_chart(selected_df), use_container_width=True)
 
 st.subheader("Ranked MSOA Opportunities")
 st.dataframe(format_table(filtered_df.sort_values("opportunity_rank"), 50), use_container_width=True, hide_index=True)
