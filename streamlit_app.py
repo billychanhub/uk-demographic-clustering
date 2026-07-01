@@ -3,6 +3,7 @@ from pathlib import Path
 import altair as alt
 import pandas as pd
 import pydeck as pdk
+import requests
 import streamlit as st
 
 
@@ -12,6 +13,9 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 FULL_OUTPUT_PATH = OUTPUT_DIR / "msoa_layer_2_opportunity_scores.csv"
 KEY_OUTPUT_PATH = OUTPUT_DIR / "merlin_key_recommendation_output.csv"
 ATTRACTION_PATH = PROCESSED_DIR / "merlin_attraction_data.csv"
+FACT_SHEET_PATH = OUTPUT_DIR / "merlin_project_fact_sheet.md"
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+OPENAI_CHAT_MODEL = "gpt-5.4-nano"
 
 MERLIN_PURPLE = "#2b1055"
 MERLIN_BLUE = "#1155cc"
@@ -266,6 +270,17 @@ def load_attractions() -> pd.DataFrame:
     )
 
 
+@st.cache_data
+def load_project_fact_sheet() -> str:
+    if FACT_SHEET_PATH.exists():
+        return FACT_SHEET_PATH.read_text(encoding="utf-8")
+    return (
+        "This dashboard identifies MSOA-level customer opportunity for Merlin UK using public demographic data, "
+        "Merlin attraction locations, opportunity scoring, and activation recommendations. The analysis is a "
+        "market opportunity prototype and does not use internal Merlin customer, sales, CRM, or campaign data."
+    )
+
+
 def compact_number(value: float) -> str:
     if pd.isna(value):
         return "n/a"
@@ -437,6 +452,174 @@ def largest_attraction_audience_in_area(data: pd.DataFrame, area_name: str) -> t
     )
 
 
+def dataframe_preview(data: pd.DataFrame, columns: list, max_rows: int = 8) -> str:
+    available_columns = [column for column in columns if column in data.columns]
+    if data.empty or not available_columns:
+        return "No rows available."
+    return data.loc[:, available_columns].head(max_rows).to_csv(index=False)
+
+
+def build_chatbot_context(
+    data: pd.DataFrame,
+    penetration_pct: float,
+    selected_attractions: list,
+    selected_segments: list,
+    selected_plays: list,
+    rank_limit: int,
+    top_area: str,
+    top_attraction: str,
+) -> str:
+    if data.empty:
+        return (
+            "Current dashboard filter context:\n"
+            f"- Opportunity rank limit: top {rank_limit:,}\n"
+            "- The current filters return no matching MSOAs.\n"
+        )
+
+    revenue = filtered_potential_revenue(data, penetration_pct)
+    filter_summary = {
+        "Merlin attraction": ", ".join(selected_attractions) if selected_attractions else "All attractions",
+        "Customer segment": ", ".join(selected_segments) if selected_segments else "All segments",
+        "Activation type": ", ".join(selected_plays) if selected_plays else "All activation types",
+        "Top opportunity areas": f"Rank 1 to {rank_limit:,}",
+        "Market penetration": f"{penetration_pct}%",
+    }
+    activation_summary = (
+        data.groupby("recommended_commercial_play", as_index=False)
+        .agg(total_population=("total_population", "sum"), msoa_count=("geo_code", "count"))
+        .assign(revenue_scenario=lambda df: df["total_population"] * (penetration_pct / 100) * REVENUE_PER_VISITOR_GBP)
+        .sort_values("total_population", ascending=False)
+    )
+    attraction_summary = (
+        data.groupby("recommended_attraction_name", as_index=False)
+        .agg(
+            total_population=("total_population", "sum"),
+            msoa_count=("geo_code", "count"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+        )
+        .sort_values(["total_population", "mean_opportunity_score"], ascending=[False, False])
+        .head(8)
+    )
+    segment_summary = (
+        data.groupby("segment_label", as_index=False)
+        .agg(
+            total_population=("total_population", "sum"),
+            msoa_count=("geo_code", "count"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+        )
+        .sort_values(["total_population", "mean_opportunity_score"], ascending=[False, False])
+        .head(8)
+    )
+    top_msoas = data.sort_values("opportunity_rank").head(8)
+
+    return "\n".join(
+        [
+            "Current dashboard filter context:",
+            *[f"- {label}: {value}" for label, value in filter_summary.items()],
+            "",
+            "Current filtered headline metrics:",
+            f"- Matching MSOAs: {len(data):,}",
+            f"- Total population: {data['total_population'].sum():,.0f}",
+            f"- Revenue scenario: {currency_number(revenue)}",
+            f"- Top opportunity area: {top_area}",
+            f"- Recommended attraction for the top opportunity area: {top_attraction}",
+            f"- Mean opportunity score: {data['overall_opportunity_score'].mean():.1f}",
+            f"- Best opportunity rank in current filters: {int(data['opportunity_rank'].min()):,}",
+            "",
+            "Activation summary for current filters:",
+            dataframe_preview(
+                activation_summary,
+                ["recommended_commercial_play", "total_population", "msoa_count", "revenue_scenario"],
+            ),
+            "Top recommended attractions by audience for current filters:",
+            dataframe_preview(
+                attraction_summary,
+                ["recommended_attraction_name", "total_population", "msoa_count", "mean_opportunity_score"],
+            ),
+            "Top customer segments by audience for current filters:",
+            dataframe_preview(segment_summary, ["segment_label", "total_population", "msoa_count", "mean_opportunity_score"]),
+            "Highest ranked MSOAs in current filters:",
+            dataframe_preview(
+                top_msoas,
+                [
+                    "geo_name",
+                    "segment_label",
+                    "overall_opportunity_score",
+                    "opportunity_rank",
+                    "recommended_attraction_name",
+                    "recommended_commercial_play",
+                    "recommended_attraction_distance_miles",
+                    "key_contributing_driver",
+                    "total_population",
+                ],
+            ),
+        ]
+    )
+
+
+def extract_openai_text(response_payload: dict) -> str:
+    text_parts = []
+    for item in response_payload.get("output", []):
+        for content in item.get("content", []):
+            if content.get("type") == "output_text" and content.get("text"):
+                text_parts.append(content["text"])
+    return "\n".join(text_parts).strip()
+
+
+def ask_openai_data_assistant(api_key: str, question: str, fact_sheet: str, dashboard_context: str) -> str:
+    instructions = """
+You are a concise data Q&A assistant embedded in a Merlin UK growth opportunity dashboard.
+
+Answer only from the supplied project fact sheet and current dashboard data context.
+If the supplied data does not contain enough information, say: "I do not have enough information in the provided data to answer that."
+Do not invent Merlin internal performance, current penetration, ticket prices, campaign results, customer behaviour, or competitor information.
+Do not answer questions unrelated to this Merlin UK opportunity analysis.
+Use plain English for senior stakeholders. Keep the answer under 160 words unless the user asks for detail.
+When giving numbers, make clear whether they are filtered dashboard figures or illustrative revenue scenarios.
+"""
+    user_input = f"""
+Project fact sheet:
+{fact_sheet}
+
+Dashboard data context:
+{dashboard_context}
+
+Stakeholder question:
+{question}
+"""
+    response = requests.post(
+        OPENAI_RESPONSES_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": OPENAI_CHAT_MODEL,
+            "instructions": instructions,
+            "input": user_input,
+            "temperature": 0.2,
+            "max_output_tokens": 450,
+            "store": False,
+        },
+        timeout=45,
+    )
+    if response.status_code != 200:
+        try:
+            error_message = response.json().get("error", {}).get("message", response.text)
+        except ValueError:
+            error_message = response.text
+        raise RuntimeError(f"OpenAI API request failed: {error_message}")
+
+    answer = extract_openai_text(response.json())
+    if not answer:
+        raise RuntimeError("OpenAI API returned no text response.")
+    return answer
+
+
+def queue_suggested_question(question: str) -> None:
+    st.session_state["pending_chat_question"] = question
+
+
 def prepare_map_data(data: pd.DataFrame, penetration_pct: float) -> pd.DataFrame:
     map_data = data.dropna(subset=["latitude", "longitude"]).copy()
     map_data["potential_revenue"] = (
@@ -571,6 +754,7 @@ def build_map(data: pd.DataFrame, attractions: pd.DataFrame, penetration_pct: fl
 
 df = load_opportunity_data()
 attractions = load_attractions()
+project_fact_sheet = load_project_fact_sheet()
 default_rank_limit = min(1000, int(df["opportunity_rank"].max()))
 
 if "attraction_filter" not in st.session_state:
@@ -583,6 +767,8 @@ if "rank_filter" not in st.session_state:
     st.session_state["rank_filter"] = default_rank_limit
 if "penetration_filter" not in st.session_state:
     st.session_state["penetration_filter"] = 30
+if "chat_messages" not in st.session_state:
+    st.session_state["chat_messages"] = []
 
 
 def reset_filters():
@@ -699,3 +885,87 @@ with st.container(border=True):
         st.info("No MSOAs match the current filters.")
     else:
         st.pydeck_chart(build_map(filtered_df, map_attractions, penetration_pct), use_container_width=True, height=650)
+
+with st.container(border=True):
+    st.subheader("Ask the Data")
+    st.caption(
+        "Optional AI assistant for simple stakeholder questions. Answers are grounded in the project fact sheet "
+        "and the current filtered dashboard data."
+    )
+
+    openai_api_key = st.text_input(
+        "OpenAI API key",
+        type="password",
+        key="openai_api_key",
+        help="Used only for this Streamlit session. The key is not saved by the app.",
+    )
+
+    suggested_questions = [
+        "Which areas are highest opportunity in the current view?",
+        "Why is the recommended attraction attractive for the top area?",
+        "Which activation type should we prioritise and why?",
+        "What caveats should I mention to stakeholders?",
+    ]
+    suggestion_cols = st.columns(4)
+    for index, question in enumerate(suggested_questions):
+        with suggestion_cols[index]:
+            st.button(
+                question,
+                key=f"suggested_question_{index}",
+                use_container_width=True,
+                on_click=queue_suggested_question,
+                args=(question,),
+            )
+
+    question_to_answer = None
+    if "pending_chat_question" in st.session_state:
+        question_to_answer = st.session_state.pop("pending_chat_question")
+
+    with st.form("stakeholder_chat_form", clear_on_submit=True):
+        typed_question = st.text_input(
+            "Ask a question about the current dashboard view",
+            placeholder="Example: Where should Merlin target family annual passes?",
+        )
+        submitted_question = st.form_submit_button("Ask assistant")
+        if submitted_question and typed_question.strip():
+            question_to_answer = typed_question.strip()
+
+    if question_to_answer:
+        if not openai_api_key:
+            st.warning("Paste an OpenAI API key to activate the assistant.")
+        else:
+            st.session_state["chat_messages"].append({"role": "user", "content": question_to_answer})
+            dashboard_context = build_chatbot_context(
+                filtered_df,
+                penetration_pct,
+                selected_attraction_values,
+                selected_segment_values,
+                selected_play_values,
+                rank_limit,
+                top_area,
+                top_attraction,
+            )
+            with st.spinner("Asking the data assistant..."):
+                try:
+                    assistant_answer = ask_openai_data_assistant(
+                        openai_api_key,
+                        question_to_answer,
+                        project_fact_sheet,
+                        dashboard_context,
+                    )
+                except Exception as exc:
+                    assistant_answer = (
+                        "I could not complete the OpenAI API request. "
+                        f"Please check the API key and try again. Details: {exc}"
+                    )
+            st.session_state["chat_messages"].append({"role": "assistant", "content": assistant_answer})
+
+    if st.session_state["chat_messages"]:
+        for message in st.session_state["chat_messages"][-8:]:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+        if st.button("Clear chat", use_container_width=False):
+            st.session_state["chat_messages"] = []
+            st.rerun()
+    else:
+        st.info("Try one of the suggested questions, or ask your own question about the filtered opportunity data.")
