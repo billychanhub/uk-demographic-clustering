@@ -11,7 +11,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = PROJECT_ROOT / "data" / "output"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 FULL_OUTPUT_PATH = OUTPUT_DIR / "msoa_layer_2_opportunity_scores.csv"
-KEY_OUTPUT_PATH = OUTPUT_DIR / "merlin_key_recommendation_output.csv"
 ATTRACTION_PATH = PROCESSED_DIR / "merlin_attraction_data.csv"
 FACT_SHEET_PATH = OUTPUT_DIR / "merlin_project_fact_sheet.md"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
@@ -238,15 +237,19 @@ st.markdown(
 
 @st.cache_data
 def load_opportunity_data() -> pd.DataFrame:
-    if FULL_OUTPUT_PATH.exists():
-        data = pd.read_csv(FULL_OUTPUT_PATH)
-    else:
-        data = pd.read_csv(KEY_OUTPUT_PATH)
+    if not FULL_OUTPUT_PATH.exists():
+        st.error(f"Full dashboard output is required but was not found: {FULL_OUTPUT_PATH}")
+        st.stop()
+    data = pd.read_csv(FULL_OUTPUT_PATH)
 
     data = data.sort_values("opportunity_rank").reset_index(drop=True)
     data["area_name"] = data["geo_name"].str.replace(r"\s+\d+$", "", regex=True)
     data["top_10_opportunity_flag"] = data["opportunity_rank"].le(max(1, round(len(data) * 0.10)))
-    data["recommended_commercial_play"] = data["recommended_commercial_play"].replace(
+    if "recommended_activation_type" not in data.columns and "recommended_commercial_play" in data.columns:
+        data["recommended_activation_type"] = data["recommended_commercial_play"]
+    if "recommended_activation_type" not in data.columns and "recommended_product_focus" in data.columns:
+        data["recommended_activation_type"] = data["recommended_product_focus"]
+    data["recommended_activation_type"] = data["recommended_activation_type"].replace(
         {
             "Annual pass / repeat visit": "Annual pass",
             "Targeted day visit": "Other",
@@ -254,7 +257,6 @@ def load_opportunity_data() -> pd.DataFrame:
             "Seasonal / tactical activation": "Other",
         }
     )
-    data["recommended_product_focus"] = data["recommended_commercial_play"]
     return data
 
 
@@ -321,7 +323,7 @@ def filtered_potential_revenue(data: pd.DataFrame, penetration_pct: float) -> fl
 
 
 def population_for_play(data: pd.DataFrame, play: str) -> int:
-    return int(data.loc[data["recommended_commercial_play"].eq(play), "total_population"].sum())
+    return int(data.loc[data["recommended_activation_type"].eq(play), "total_population"].sum())
 
 
 def revenue_for_play(data: pd.DataFrame, play: str, penetration_pct: float) -> float:
@@ -331,7 +333,7 @@ def revenue_for_play(data: pd.DataFrame, play: str, penetration_pct: float) -> f
 
 def revenue_by_activation_chart(data: pd.DataFrame, penetration_pct: float) -> alt.Chart:
     chart_data = (
-        data.groupby("recommended_commercial_play", as_index=False)
+        data.groupby("recommended_activation_type", as_index=False)
         .agg(
             total_population=("total_population", "sum"),
             msoa_count=("geo_code", "count"),
@@ -339,8 +341,8 @@ def revenue_by_activation_chart(data: pd.DataFrame, penetration_pct: float) -> a
         .assign(
             revenue_scenario=lambda df: df["total_population"] * (penetration_pct / 100) * REVENUE_PER_VISITOR_GBP,
             revenue_scenario_millions=lambda df: df["revenue_scenario"] / 1_000_000,
-            play_order=lambda df: df["recommended_commercial_play"].map({play: i for i, play in enumerate(PLAY_ORDER)}),
-            activation_label=lambda df: df["recommended_commercial_play"].replace(
+            play_order=lambda df: df["recommended_activation_type"].map({play: i for i, play in enumerate(PLAY_ORDER)}),
+            activation_label=lambda df: df["recommended_activation_type"].replace(
                 {"Multi-attraction cluster marketing": "Cluster marketing"}
             ),
         )
@@ -409,22 +411,19 @@ def top_attractions_by_audience_chart(data: pd.DataFrame, penetration_pct: float
 def highest_opportunity_area(data: pd.DataFrame) -> tuple:
     if data.empty:
         return "n/a", "No matching MSOAs"
-    top_area_data = data.loc[data["top_10_opportunity_flag"]].copy()
-    if top_area_data.empty:
-        return "n/a", "No top-10% MSOAs in current filters"
     area_summary = (
-        top_area_data.groupby("area_name", as_index=False)
+        data.groupby("area_name", as_index=False)
         .agg(
-            top_10_msoas=("geo_code", "count"),
-            top_10_population=("total_population", "sum"),
+            msoa_count=("geo_code", "count"),
+            total_population=("total_population", "sum"),
             mean_score=("overall_opportunity_score", "mean"),
         )
-        .sort_values(["top_10_msoas", "top_10_population", "mean_score"], ascending=[False, False, False])
+        .sort_values(["mean_score", "total_population", "msoa_count"], ascending=[False, False, False])
     )
     row = area_summary.iloc[0]
     return (
         str(row["area_name"]),
-        f"{int(row['top_10_msoas']):,} top-10% MSOAs | {compact_number(row['top_10_population'])} people",
+        f"Mean GOI {row['mean_score']:.1f} | {compact_number(row['total_population'])} people",
     )
 
 
@@ -433,9 +432,9 @@ def largest_attraction_audience_in_area(data: pd.DataFrame, area_name: str) -> t
         return "n/a", "No matching MSOAs"
     if area_name == "n/a":
         return "n/a", "No area cluster selected"
-    area_data = data.loc[data["area_name"].eq(area_name) & data["top_10_opportunity_flag"]].copy()
+    area_data = data.loc[data["area_name"].eq(area_name)].copy()
     if area_data.empty:
-        return "n/a", "No top-10% MSOAs in area cluster"
+        return "n/a", "No MSOAs in selected area"
     attraction_summary = (
         area_data.groupby("recommended_attraction_name", as_index=False)
         .agg(
@@ -485,7 +484,7 @@ def build_chatbot_context(
         "Market penetration": f"{penetration_pct}%",
     }
     activation_summary = (
-        data.groupby("recommended_commercial_play", as_index=False)
+        data.groupby("recommended_activation_type", as_index=False)
         .agg(total_population=("total_population", "sum"), msoa_count=("geo_code", "count"))
         .assign(revenue_scenario=lambda df: df["total_population"] * (penetration_pct / 100) * REVENUE_PER_VISITOR_GBP)
         .sort_values("total_population", ascending=False)
@@ -529,7 +528,7 @@ def build_chatbot_context(
             "Activation summary for current filters:",
             dataframe_preview(
                 activation_summary,
-                ["recommended_commercial_play", "total_population", "msoa_count", "revenue_scenario"],
+                ["recommended_activation_type", "total_population", "msoa_count", "revenue_scenario"],
             ),
             "Top recommended attractions by audience for current filters:",
             dataframe_preview(
@@ -547,7 +546,7 @@ def build_chatbot_context(
                     "overall_opportunity_score",
                     "opportunity_rank",
                     "recommended_attraction_name",
-                    "recommended_commercial_play",
+                    "recommended_activation_type",
                     "recommended_attraction_distance_miles",
                     "key_contributing_driver",
                     "total_population",
@@ -631,13 +630,13 @@ def prepare_map_data(data: pd.DataFrame, penetration_pct: float) -> pd.DataFrame
     map_data["population_label"] = map_data["total_population"].map(lambda x: f"{x:,.0f}")
     map_data["score_label"] = map_data["overall_opportunity_score"].map(lambda x: f"{x:.1f}")
     map_data["distance_label"] = map_data["recommended_attraction_distance_miles"].map(lambda x: f"{x:.1f} miles")
-    map_data["play_colour"] = map_data["recommended_commercial_play"].apply(
+    map_data["play_colour"] = map_data["recommended_activation_type"].apply(
         lambda play: PLAY_COLOURS.get(play, [130, 125, 155, 135])
     )
     map_data["radius"] = (map_data["total_population"].clip(lower=2_000, upper=18_000) / 18_000 * 1100) + 350
     map_data["tooltip_title"] = map_data["geo_name"]
     map_data["tooltip_line_1"] = "Segment: " + map_data["segment_label"].astype(str)
-    map_data["tooltip_line_2"] = "Activation type: " + map_data["recommended_commercial_play"].astype(str)
+    map_data["tooltip_line_2"] = "Activation type: " + map_data["recommended_activation_type"].astype(str)
     map_data["tooltip_line_3"] = (
         "GOI: " + map_data["score_label"] + " | Rank: " + map_data["opportunity_rank"].astype(str)
     )
@@ -755,7 +754,7 @@ def build_map(data: pd.DataFrame, attractions: pd.DataFrame, penetration_pct: fl
 df = load_opportunity_data()
 attractions = load_attractions()
 project_fact_sheet = load_project_fact_sheet()
-default_rank_limit = min(1000, int(df["opportunity_rank"].max()))
+default_rank_limit = int(df["opportunity_rank"].max())
 
 if "attraction_filter" not in st.session_state:
     st.session_state["attraction_filter"] = ["All attractions"]
@@ -801,7 +800,7 @@ with st.sidebar:
     segment_options = ["All segments"] + sorted(df["segment_label"].dropna().unique().tolist())
     selected_segments = st.multiselect("Customer segment", segment_options, key="segment_filter")
 
-    play_options = ["All activation types"] + sorted(df["recommended_commercial_play"].dropna().unique().tolist())
+    play_options = ["All activation types"] + sorted(df["recommended_activation_type"].dropna().unique().tolist())
     selected_plays = st.multiselect("Activation type", play_options, key="activation_filter")
 
     max_rank = int(df["opportunity_rank"].max())
@@ -819,7 +818,7 @@ if selected_attraction_values:
 if selected_segment_values:
     filtered_df = filtered_df.loc[filtered_df["segment_label"].isin(selected_segment_values)]
 if selected_play_values:
-    filtered_df = filtered_df.loc[filtered_df["recommended_commercial_play"].isin(selected_play_values)]
+    filtered_df = filtered_df.loc[filtered_df["recommended_activation_type"].isin(selected_play_values)]
 
 if not selected_attraction_values:
     map_attractions = attractions.copy()
@@ -889,8 +888,7 @@ with st.container(border=True):
 with st.container(border=True):
     st.subheader("Ask the Data")
     st.caption(
-        "Optional AI assistant for simple stakeholder questions. Answers are grounded in the project fact sheet "
-        "and the current filtered dashboard data."
+        "AI may be wrong. Verify important points; each question is answered independently, so follow-ups are not supported by design."
     )
 
     openai_api_key = st.text_input(
