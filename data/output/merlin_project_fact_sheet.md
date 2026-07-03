@@ -196,6 +196,62 @@ The chatbot should be able to answer questions such as:
 
 The chatbot should answer using only the supplied fact sheet and generated dataset summaries. If the data does not support an answer, it should say it does not have enough information.
 
+## Preloaded Answers For Dashboard Suggested Questions
+
+Use this section when the stakeholder asks one of the dashboard's suggested chatbot questions or a very similar question. Keep the answer conversational and concise, and mention that figures are from the current opportunity dataset unless the question is explicitly about the current filtered dashboard view.
+
+### Question: Explain each customer segment to me.
+
+Recommended answer:
+
+The model groups UK MSOAs into five customer segments:
+
+- Mainstream Affluent Suburban Markets: the strongest priority segment. These areas have large population scale, stronger affluence indicators, high car access, and good family/suburban characteristics. They are well suited to family-led propositions, annual passes, and major attraction campaigns.
+- Balanced Regional Family Markets: family-heavy regional areas with the highest child and family-household profile. These are highly relevant for family attractions, annual pass propositions, and practical local campaigns.
+- Dense Urban Professional Markets: dense city markets with stronger AB/C1 indicators but lower car access. These are more relevant for city-centre attractions, premium urban experiences, and shorter travel journeys.
+- Student & Young Adult Urban Markets: younger urban markets with a stronger under-25 profile. They are less family-led, but can be relevant for social, experience-led, or city-based attractions.
+- Older Rural & Low-Density Markets: lower-density, older markets with high car access. These are less naturally aligned to the core family-growth opportunity unless there is a strong nearby attraction or a specific product reason.
+
+The highest mean GOI segments are Mainstream Affluent Suburban Markets and Balanced Regional Family Markets, so these should be treated as the core growth audiences in this prototype.
+
+### Question: Which areas are highest opportunity for LEGOLAND?
+
+Recommended answer:
+
+For LEGOLAND Windsor Resort, the highest-scoring areas by mean GOI include Cambridge, Runnymede, Winchester, Hart, Vale of White Horse, Wokingham, Slough, and Luton.
+
+There are two useful ways to interpret this:
+
+- Highest intensity: Cambridge and Runnymede have very high mean GOI, but only a small number of MSOAs in this dataset slice.
+- More scalable local opportunity: Wokingham, Slough, Vale of White Horse, Hart, and Luton combine strong GOI with a larger recommended audience and realistic distance to LEGOLAND.
+
+For an executive recommendation, prioritise the larger and more practical catchments first, especially Wokingham, Slough, Vale of White Horse, Hart, and Luton.
+
+### Question: Where should Merlin target family annual passes?
+
+Recommended answer:
+
+For family annual passes, the model looks for MSOAs assigned to a family segment and an annual-pass activation type. The highest-scoring areas include Norwich, Fenland, Worthing, Rochdale, Manchester, Trafford, Boston, and Warrington.
+
+For a practical campaign, Manchester and Rochdale look especially useful because they combine strong GOI with larger population scale. Norwich also scores very strongly, while Trafford and Warrington are practical nearby annual-pass opportunities.
+
+The logic is that annual passes are most relevant where families are close enough to a Merlin attraction to make repeat visits feel realistic.
+
+### Question: Which attractions have the largest recommended audience?
+
+Recommended answer:
+
+The largest recommended audiences in the current opportunity dataset are:
+
+- Warwick Castle: 11.4m population, 1,474 MSOAs.
+- SEA LIFE Manchester: 9.1m population, 1,136 MSOAs.
+- LEGOLAND Windsor Resort: 5.5m population, 670 MSOAs.
+- SEA LIFE Birmingham: 4.8m population, 573 MSOAs.
+- Shrek's Adventure! London: 4.7m population, 524 MSOAs.
+- Chessington World of Adventures Resort: 3.0m population, 355 MSOAs.
+
+Audience size is not the same as opportunity quality. For example, Warwick Castle has the largest recommended audience, but its mean GOI is lower than some other attractions. Chessington, LEGOLAND, Shrek's Adventure! London, and SEA LIFE Birmingham have smaller audiences than Warwick Castle but stronger average opportunity scores in the model.
+
 ## Important Limitations
 
 - The model uses public demographic data and does not include actual Merlin customer behaviour.
