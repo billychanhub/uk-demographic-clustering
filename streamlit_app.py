@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 import altair as alt
 import pandas as pd
@@ -78,6 +79,7 @@ st.markdown(
     }}
 
     [data-testid="stSidebar"] div[data-baseweb="select"] *,
+    [data-testid="stSidebar"] div[data-baseweb="input"] *,
     [data-testid="stSidebar"] div[data-baseweb="popover"] * {{
         color: var(--merlin-ink) !important;
     }}
@@ -178,6 +180,17 @@ st.markdown(
         overflow-wrap: anywhere;
     }}
 
+    div[data-testid="stMetric"],
+    div[data-testid="stMetricValue"],
+    div[data-testid="stMetricValue"] > div {{
+        white-space: normal;
+        overflow: visible;
+        overflow-wrap: anywhere;
+        text-overflow: clip;
+        max-width: 100%;
+        line-height: 1.08;
+    }}
+
     .section-panel {{
         background: rgba(255, 255, 255, 0.90);
         border: 1px solid rgba(43, 16, 85, 0.10);
@@ -244,7 +257,6 @@ def load_opportunity_data() -> pd.DataFrame:
 
     data = data.sort_values("opportunity_rank").reset_index(drop=True)
     data["area_name"] = data["geo_name"].str.replace(r"\s+\d+$", "", regex=True)
-    data["top_10_opportunity_flag"] = data["opportunity_rank"].le(max(1, round(len(data) * 0.10)))
     if "recommended_activation_type" not in data.columns and "recommended_commercial_play" in data.columns:
         data["recommended_activation_type"] = data["recommended_commercial_play"]
     if "recommended_activation_type" not in data.columns and "recommended_product_focus" in data.columns:
@@ -301,17 +313,14 @@ def currency_number(value: float) -> str:
     return f"£{value:,.0f}"
 
 
-def metric_card(label: str, value: str, note: str, accent: str) -> None:
-    st.markdown(
-        f"""
-        <div class="metric-card" style="--accent:{accent};">
-            <div class="metric-label">{label}</div>
-            <div class="metric-value">{value}</div>
-            <div class="metric-note">{note}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def metric_card(label: str, value: str, note: str, accent: str, tooltip: Optional[str] = None) -> None:
+    with st.container(border=True):
+        st.markdown(
+            f'<div style="height:4px;background:{accent};border-radius:8px 8px 0 0;margin-bottom:6px;"></div>',
+            unsafe_allow_html=True,
+        )
+        st.metric(label=label, value=value, help=tooltip)
+        st.caption(note)
 
 
 def filtered_potential_revenue(data: pd.DataFrame, penetration_pct: float) -> float:
@@ -411,6 +420,17 @@ def top_attractions_by_audience_chart(data: pd.DataFrame, penetration_pct: float
 def highest_opportunity_area(data: pd.DataFrame) -> tuple:
     if data.empty:
         return "n/a", "No matching MSOAs"
+    area_summary = top_opportunity_areas(data, top_n=None)
+    row = area_summary.iloc[0]
+    return (
+        str(row["area_name"]),
+        f"Mean GOI {row['mean_score']:.1f} | {compact_number(row['total_population'])} people",
+    )
+
+
+def top_opportunity_areas(data: pd.DataFrame, top_n: Optional[int] = 5) -> pd.DataFrame:
+    if data.empty:
+        return pd.DataFrame(columns=["area_name", "msoa_count", "total_population", "mean_score"])
     area_summary = (
         data.groupby("area_name", as_index=False)
         .agg(
@@ -420,11 +440,9 @@ def highest_opportunity_area(data: pd.DataFrame) -> tuple:
         )
         .sort_values(["mean_score", "total_population", "msoa_count"], ascending=[False, False, False])
     )
-    row = area_summary.iloc[0]
-    return (
-        str(row["area_name"]),
-        f"Mean GOI {row['mean_score']:.1f} | {compact_number(row['total_population'])} people",
-    )
+    if top_n is None:
+        return area_summary
+    return area_summary.head(top_n)
 
 
 def largest_attraction_audience_in_area(data: pd.DataFrame, area_name: str) -> tuple:
@@ -459,38 +477,119 @@ def dataframe_preview(data: pd.DataFrame, columns: list, max_rows: int = 8) -> s
 
 
 def build_chatbot_context(
-    data: pd.DataFrame,
+    full_data: pd.DataFrame,
+    filtered_data: pd.DataFrame,
     penetration_pct: float,
     selected_attractions: list,
     selected_segments: list,
     selected_plays: list,
+    area_search: str,
     rank_limit: int,
     top_area: str,
     top_attraction: str,
 ) -> str:
-    if data.empty:
-        return (
-            "Current dashboard filter context:\n"
-            f"- Opportunity rank limit: top {rank_limit:,}\n"
-            "- The current filters return no matching MSOAs.\n"
-        )
-
-    revenue = filtered_potential_revenue(data, penetration_pct)
     filter_summary = {
         "Merlin attraction": ", ".join(selected_attractions) if selected_attractions else "All attractions",
         "Customer segment": ", ".join(selected_segments) if selected_segments else "All segments",
         "Activation type": ", ".join(selected_plays) if selected_plays else "All activation types",
-        "Top opportunity areas": f"Rank 1 to {rank_limit:,}",
+        "Area name contains": area_search if area_search else "All areas",
+        "Top opportunity MSOAs": f"Rank 1 to {rank_limit:,}",
         "Market penetration": f"{penetration_pct}%",
     }
+
+    full_activation_summary = (
+        full_data.groupby("recommended_activation_type", as_index=False)
+        .agg(total_population=("total_population", "sum"), msoa_count=("geo_code", "count"))
+        .sort_values("total_population", ascending=False)
+    )
+    full_attraction_summary = (
+        full_data.groupby("recommended_attraction_name", as_index=False)
+        .agg(
+            total_population=("total_population", "sum"),
+            msoa_count=("geo_code", "count"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+        )
+        .sort_values(["total_population", "mean_opportunity_score"], ascending=[False, False])
+        .head(10)
+    )
+    full_segment_summary = (
+        full_data.groupby("segment_label", as_index=False)
+        .agg(
+            total_population=("total_population", "sum"),
+            msoa_count=("geo_code", "count"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+        )
+        .sort_values(["mean_opportunity_score", "total_population"], ascending=[False, False])
+    )
+    full_area_summary = top_opportunity_areas(full_data, top_n=10)
+    family_annual_pass_summary = (
+        full_data.loc[
+            full_data["recommended_activation_type"].eq("Annual pass")
+            & full_data["segment_label"].str.contains("family", case=False, na=False)
+        ]
+        .groupby("area_name", as_index=False)
+        .agg(
+            total_population=("total_population", "sum"),
+            msoa_count=("geo_code", "count"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+        )
+        .sort_values(["mean_opportunity_score", "total_population"], ascending=[False, False])
+        .head(8)
+    )
+    legoland_summary = (
+        full_data.loc[full_data["recommended_attraction_name"].str.contains("LEGOLAND", case=False, na=False)]
+        .groupby("area_name", as_index=False)
+        .agg(
+            total_population=("total_population", "sum"),
+            msoa_count=("geo_code", "count"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+        )
+        .sort_values(["mean_opportunity_score", "total_population"], ascending=[False, False])
+        .head(8)
+    )
+
+    full_context_lines = [
+        "Full opportunity dataset context:",
+        f"- Total MSOAs: {len(full_data):,}",
+        f"- Total population: {full_data['total_population'].sum():,.0f}",
+        f"- Mean opportunity score: {full_data['overall_opportunity_score'].mean():.1f}",
+        "",
+        "Customer segments across the full dataset:",
+        dataframe_preview(full_segment_summary, ["segment_label", "total_population", "msoa_count", "mean_opportunity_score"], max_rows=12),
+        "Highest opportunity areas across the full dataset:",
+        dataframe_preview(full_area_summary, ["area_name", "msoa_count", "total_population", "mean_score"], max_rows=10),
+        "Top recommended attractions by audience across the full dataset:",
+        dataframe_preview(
+            full_attraction_summary,
+            ["recommended_attraction_name", "total_population", "msoa_count", "mean_opportunity_score"],
+            max_rows=10,
+        ),
+        "Activation types across the full dataset:",
+        dataframe_preview(full_activation_summary, ["recommended_activation_type", "total_population", "msoa_count"]),
+        "Highest opportunity areas for LEGOLAND across the full dataset:",
+        dataframe_preview(legoland_summary, ["area_name", "total_population", "msoa_count", "mean_opportunity_score"]),
+        "Highest opportunity family annual pass areas across the full dataset:",
+        dataframe_preview(family_annual_pass_summary, ["area_name", "total_population", "msoa_count", "mean_opportunity_score"]),
+    ]
+
+    if filtered_data.empty:
+        return (
+            "\n".join(full_context_lines)
+            + "\n\nCurrent dashboard filter context:\n"
+            + "\n".join([f"- {label}: {value}" for label, value in filter_summary.items()])
+            + "\n"
+            "- The current filters return no matching MSOAs.\n"
+        )
+
+    revenue = filtered_potential_revenue(filtered_data, penetration_pct)
     activation_summary = (
-        data.groupby("recommended_activation_type", as_index=False)
+        filtered_data.groupby("recommended_activation_type", as_index=False)
         .agg(total_population=("total_population", "sum"), msoa_count=("geo_code", "count"))
         .assign(revenue_scenario=lambda df: df["total_population"] * (penetration_pct / 100) * REVENUE_PER_VISITOR_GBP)
         .sort_values("total_population", ascending=False)
     )
     attraction_summary = (
-        data.groupby("recommended_attraction_name", as_index=False)
+        filtered_data.groupby("recommended_attraction_name", as_index=False)
         .agg(
             total_population=("total_population", "sum"),
             msoa_count=("geo_code", "count"),
@@ -500,7 +599,7 @@ def build_chatbot_context(
         .head(8)
     )
     segment_summary = (
-        data.groupby("segment_label", as_index=False)
+        filtered_data.groupby("segment_label", as_index=False)
         .agg(
             total_population=("total_population", "sum"),
             msoa_count=("geo_code", "count"),
@@ -509,21 +608,23 @@ def build_chatbot_context(
         .sort_values(["total_population", "mean_opportunity_score"], ascending=[False, False])
         .head(8)
     )
-    top_msoas = data.sort_values("opportunity_rank").head(8)
+    top_msoas = filtered_data.sort_values("opportunity_rank").head(8)
 
     return "\n".join(
         [
+            *full_context_lines,
+            "",
             "Current dashboard filter context:",
             *[f"- {label}: {value}" for label, value in filter_summary.items()],
             "",
             "Current filtered headline metrics:",
-            f"- Matching MSOAs: {len(data):,}",
-            f"- Total population: {data['total_population'].sum():,.0f}",
+            f"- Matching MSOAs: {len(filtered_data):,}",
+            f"- Total population: {filtered_data['total_population'].sum():,.0f}",
             f"- Revenue scenario: {currency_number(revenue)}",
             f"- Top opportunity area: {top_area}",
             f"- Recommended attraction for the top opportunity area: {top_attraction}",
-            f"- Mean opportunity score: {data['overall_opportunity_score'].mean():.1f}",
-            f"- Best opportunity rank in current filters: {int(data['opportunity_rank'].min()):,}",
+            f"- Mean opportunity score: {filtered_data['overall_opportunity_score'].mean():.1f}",
+            f"- Best opportunity rank in current filters: {int(filtered_data['opportunity_rank'].min()):,}",
             "",
             "Activation summary for current filters:",
             dataframe_preview(
@@ -569,12 +670,13 @@ def ask_openai_data_assistant(api_key: str, question: str, fact_sheet: str, dash
     instructions = """
 You are a concise data Q&A assistant embedded in a Merlin UK growth opportunity dashboard.
 
-Answer only from the supplied project fact sheet and current dashboard data context.
+Answer only from the supplied project fact sheet, full opportunity dataset context, and current dashboard filter context.
 If the supplied data does not contain enough information, say: "I do not have enough information in the provided data to answer that."
 Do not invent Merlin internal performance, current penetration, ticket prices, campaign results, customer behaviour, or competitor information.
 Do not answer questions unrelated to this Merlin UK opportunity analysis.
 Use plain English for senior stakeholders. Keep the answer under 160 words unless the user asks for detail.
-When giving numbers, make clear whether they are filtered dashboard figures or illustrative revenue scenarios.
+When giving numbers, make clear whether they come from the full opportunity dataset, the current dashboard filters, or illustrative revenue scenarios.
+If the question asks about the current view or selected filters, prioritise the current dashboard filter context. Otherwise, use the full opportunity dataset context.
 """
     user_input = f"""
 Project fact sheet:
@@ -648,8 +750,18 @@ def prepare_map_data(data: pd.DataFrame, penetration_pct: float) -> pd.DataFrame
     return map_data
 
 
-def build_map(data: pd.DataFrame, attractions: pd.DataFrame, penetration_pct: float) -> pdk.Deck:
+def build_map(
+    data: pd.DataFrame,
+    attractions: pd.DataFrame,
+    penetration_pct: float,
+    focused_area: Optional[str] = None,
+) -> pdk.Deck:
     map_data = prepare_map_data(data, penetration_pct)
+    highlight_map_data = pd.DataFrame()
+    if focused_area:
+        highlight_map_data = map_data.loc[map_data["area_name"].eq(focused_area)].copy()
+        if not highlight_map_data.empty:
+            highlight_map_data["highlight_radius"] = highlight_map_data["radius"] + 140
     attraction_map_data = attractions.dropna(subset=["latitude", "longitude"]).copy()
     attraction_map_data["tooltip_title"] = attraction_map_data["attraction_name"]
     attraction_map_data["tooltip_line_1"] = "Merlin attraction"
@@ -689,6 +801,10 @@ def build_map(data: pd.DataFrame, attractions: pd.DataFrame, penetration_pct: fl
 
     if map_data.empty:
         latitude, longitude, zoom = 54.5, -2.5, 5
+    elif not highlight_map_data.empty:
+        latitude = highlight_map_data["latitude"].mean()
+        longitude = highlight_map_data["longitude"].mean()
+        zoom = 9.0 if len(highlight_map_data) <= 30 else 8.0
     else:
         latitude = map_data["latitude"].mean()
         longitude = map_data["longitude"].mean()
@@ -704,6 +820,19 @@ def build_map(data: pd.DataFrame, attractions: pd.DataFrame, penetration_pct: fl
         line_width_min_pixels=0.6,
         pickable=True,
         opacity=0.72,
+    )
+    highlight_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=highlight_map_data,
+        get_position="[longitude, latitude]",
+        get_radius="highlight_radius",
+        get_fill_color=[0, 0, 0, 0],
+        get_line_color=[255, 216, 77, 255],
+        line_width_min_pixels=3,
+        pickable=False,
+        stroked=True,
+        filled=False,
+        opacity=1.0,
     )
     attraction_layer = pdk.Layer(
         "ScatterplotLayer",
@@ -742,11 +871,16 @@ def build_map(data: pd.DataFrame, attractions: pd.DataFrame, penetration_pct: fl
         """,
         "style": {"backgroundColor": "#2b1055", "color": "white", "fontSize": "12px"},
     }
+    layers = [msoa_layer]
+    if not highlight_map_data.empty:
+        layers.append(highlight_layer)
+    layers.extend([attraction_layer, attraction_symbol_layer])
+
     return pdk.Deck(
         map_provider="carto",
         map_style="light",
         initial_view_state=pdk.ViewState(latitude=latitude, longitude=longitude, zoom=zoom, pitch=0),
-        layers=[msoa_layer, attraction_layer, attraction_symbol_layer],
+        layers=layers,
         tooltip=tooltip,
     )
 
@@ -762,20 +896,34 @@ if "segment_filter" not in st.session_state:
     st.session_state["segment_filter"] = ["All segments"]
 if "activation_filter" not in st.session_state:
     st.session_state["activation_filter"] = ["All activation types"]
+if "area_filter" not in st.session_state:
+    st.session_state["area_filter"] = "All areas"
 if "rank_filter" not in st.session_state:
     st.session_state["rank_filter"] = default_rank_limit
 if "penetration_filter" not in st.session_state:
     st.session_state["penetration_filter"] = 30
+if "leaderboard_area_focus" not in st.session_state:
+    st.session_state["leaderboard_area_focus"] = None
+if "map_reset_counter" not in st.session_state:
+    st.session_state["map_reset_counter"] = 0
 if "chat_messages" not in st.session_state:
     st.session_state["chat_messages"] = []
+
+
+def reset_map_view():
+    st.session_state["leaderboard_area_focus"] = None
+    st.session_state["map_reset_counter"] += 1
 
 
 def reset_filters():
     st.session_state["attraction_filter"] = ["All attractions"]
     st.session_state["segment_filter"] = ["All segments"]
     st.session_state["activation_filter"] = ["All activation types"]
+    st.session_state["area_filter"] = "All areas"
     st.session_state["rank_filter"] = default_rank_limit
     st.session_state["penetration_filter"] = 30
+    st.session_state["leaderboard_area_focus"] = None
+    st.session_state["map_reset_counter"] += 1
 
 
 st.markdown(
@@ -803,8 +951,28 @@ with st.sidebar:
     play_options = ["All activation types"] + sorted(df["recommended_activation_type"].dropna().unique().tolist())
     selected_plays = st.multiselect("Activation type", play_options, key="activation_filter")
 
+    area_options = ["All areas"] + sorted(df["area_name"].dropna().unique().tolist())
+    selected_area = st.selectbox(
+        "Area name",
+        area_options,
+        key="area_filter",
+        help="Start typing to search and select an area.",
+    )
+    area_search = "" if selected_area == "All areas" else selected_area
+
     max_rank = int(df["opportunity_rank"].max())
-    rank_limit = st.slider("Top opportunity areas", 1, max_rank, default_rank_limit, key="rank_filter")
+    rank_limit = st.slider(
+        "Top opportunity MSOAs",
+        1,
+        max_rank,
+        default_rank_limit,
+        key="rank_filter",
+        help=(
+            "MSOA stands for Middle Layer Super Output Area. It is a small UK statistical geography, "
+            "typically containing around 5,000 to 15,000 residents. This slider includes MSOAs from rank 1 "
+            "up to the selected rank."
+        ),
+    )
     penetration_pct = st.slider("Market penetration", 10, 100, 30, 10, format="%d%%", key="penetration_filter")
 
     st.button("Reset filters", use_container_width=True, on_click=reset_filters)
@@ -819,6 +987,8 @@ if selected_segment_values:
     filtered_df = filtered_df.loc[filtered_df["segment_label"].isin(selected_segment_values)]
 if selected_play_values:
     filtered_df = filtered_df.loc[filtered_df["recommended_activation_type"].isin(selected_play_values)]
+if area_search:
+    filtered_df = filtered_df.loc[filtered_df["area_name"].eq(area_search)]
 
 if not selected_attraction_values:
     map_attractions = attractions.copy()
@@ -826,6 +996,8 @@ else:
     map_attractions = attractions.loc[attractions["attraction_name"].isin(selected_attraction_values)].copy()
 
 potential_revenue = filtered_potential_revenue(filtered_df, penetration_pct)
+filtered_population = int(filtered_df["total_population"].sum()) if not filtered_df.empty else 0
+filtered_msoa_count = len(filtered_df)
 cluster_population = population_for_play(filtered_df, "Multi-attraction cluster marketing")
 annual_pass_population = population_for_play(filtered_df, "Annual pass")
 short_break_population = population_for_play(filtered_df, "Short break")
@@ -837,17 +1009,36 @@ top_attraction, top_attraction_note = largest_attraction_audience_in_area(filter
 
 metric_cols = st.columns(6)
 with metric_cols[0]:
-    metric_card("Revenue Scenario", currency_number(potential_revenue), f"{penetration_pct}% population x £33 revenue per visitor", MERLIN_GOLD)
+    metric_card(
+        "Population",
+        compact_number(filtered_population),
+        f"{filtered_msoa_count:,} matching MSOAs",
+        MERLIN_PURPLE,
+        tooltip=(
+            "MSOA stands for Middle Layer Super Output Area. It is a small UK statistical geography, "
+            "typically containing around 5,000 to 15,000 residents, used here as the local market area."
+        ),
+    )
 with metric_cols[1]:
-    metric_card("Clustering Opportunity", compact_number(cluster_population), f"Revenue scenario: {currency_number(cluster_revenue)}", MERLIN_AQUA)
+    metric_card("Revenue Scenario", currency_number(potential_revenue), f"{penetration_pct}% population x £33 revenue per visitor", MERLIN_GOLD)
 with metric_cols[2]:
-    metric_card("Annual Pass Opportunity", compact_number(annual_pass_population), f"Revenue scenario: {currency_number(annual_pass_revenue)}", MERLIN_BLUE)
+    metric_card("Cluster Marketing Opportunity", compact_number(cluster_population), f"Revenue scenario: {currency_number(cluster_revenue)}", MERLIN_AQUA)
 with metric_cols[3]:
-    metric_card("Short Break Opportunity", compact_number(short_break_population), f"Revenue scenario: {currency_number(short_break_revenue)}", "#7b61ff")
+    metric_card("Annual Pass Opportunity", compact_number(annual_pass_population), f"Revenue scenario: {currency_number(annual_pass_revenue)}", MERLIN_BLUE)
 with metric_cols[4]:
-    metric_card("Top Opportunity Area", top_area, top_area_note, MERLIN_PURPLE)
+    metric_card("Short Break Opportunity", compact_number(short_break_population), f"Revenue scenario: {currency_number(short_break_revenue)}", "#7b61ff")
 with metric_cols[5]:
-    metric_card("Recommended Attraction", top_attraction, top_attraction_note, "#ff8a00")
+    metric_card(
+        "Top Opportunity Area",
+        top_area,
+        top_area_note,
+        MERLIN_PURPLE,
+        tooltip=(
+            "GOI means Growth Opportunity Index. It combines market size, segment priority and recommended "
+            "attraction alignment. This BAN groups the current filtered MSOAs by area and selects the area "
+            "with the highest mean GOI, using population and MSOA count as tie-breakers."
+        ),
+    )
 
 chart_col_1, chart_col_2 = st.columns(2)
 with chart_col_1:
@@ -867,29 +1058,64 @@ with chart_col_2:
             st.altair_chart(top_attractions_by_audience_chart(filtered_df, penetration_pct), use_container_width=True)
 
 with st.container(border=True):
-    st.markdown(
-        """
-        <div class="map-legend">
-            <span class="legend-item"><span class="legend-swatch" style="background: rgba(35, 182, 230, 0.75);"></span>Cluster marketing</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: rgba(255, 138, 0, 0.85);"></span>Annual pass</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: rgba(123, 97, 255, 0.75);"></span>Short break</span>
-            <span class="legend-item"><span class="legend-swatch" style="background: rgba(130, 125, 155, 0.55);"></span>Other</span>
-            <span class="legend-item"><span class="legend-attraction">M</span>Merlin attraction</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    map_col, leaderboard_col = st.columns([4.6, 1.4])
+    area_leaderboard = top_opportunity_areas(filtered_df, top_n=5)
+    focused_area = st.session_state.get("leaderboard_area_focus")
+    if focused_area and focused_area not in set(filtered_df["area_name"].dropna()):
+        focused_area = None
+        st.session_state["leaderboard_area_focus"] = None
 
-    if filtered_df.empty:
-        st.info("No MSOAs match the current filters.")
-    else:
-        st.pydeck_chart(build_map(filtered_df, map_attractions, penetration_pct), use_container_width=True, height=650)
+    with leaderboard_col:
+        st.subheader("Top Opportunity Areas")
+        if area_leaderboard.empty:
+            st.info("No areas to rank.")
+        else:
+            for index, row in enumerate(area_leaderboard.itertuples(index=False), start=1):
+                is_selected = row.area_name == focused_area
+                if st.button(
+                    f"{index}. {row.area_name}",
+                    key=f"leaderboard_area_{index}_{row.area_name}",
+                    type="primary" if is_selected else "secondary",
+                    use_container_width=True,
+                ):
+                    focused_area = row.area_name
+                    st.session_state["leaderboard_area_focus"] = focused_area
+                st.caption(
+                    f"Mean GOI {row.mean_score:.1f} | "
+                    f"{compact_number(row.total_population)} people | "
+                    f"{int(row.msoa_count):,} MSOAs"
+                )
+
+    with map_col:
+        reset_map_col = st.columns([1, 0.24])
+        with reset_map_col[1]:
+            st.button("Reset map view", use_container_width=True, on_click=reset_map_view)
+        st.markdown(
+            """
+            <div class="map-legend">
+                <span class="legend-item"><span class="legend-swatch" style="background: rgba(35, 182, 230, 0.75);"></span>Cluster marketing</span>
+                <span class="legend-item"><span class="legend-swatch" style="background: rgba(255, 138, 0, 0.85);"></span>Annual pass</span>
+                <span class="legend-item"><span class="legend-swatch" style="background: rgba(123, 97, 255, 0.75);"></span>Short break</span>
+                <span class="legend-item"><span class="legend-swatch" style="background: rgba(130, 125, 155, 0.55);"></span>Other</span>
+                <span class="legend-item"><span class="legend-attraction">M</span>Merlin attraction</span>
+                <span class="legend-item"><span class="legend-swatch" style="background: transparent; border: 3px solid #ffd84d;"></span>Selected leaderboard area</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if filtered_df.empty:
+            st.info("No MSOAs match the current filters.")
+        else:
+            st.pydeck_chart(
+                build_map(filtered_df, map_attractions, penetration_pct, focused_area),
+                use_container_width=True,
+                height=650,
+                key=f"opportunity_map_{st.session_state['map_reset_counter']}",
+            )
 
 with st.container(border=True):
     st.subheader("Ask the Data")
-    st.caption(
-        "AI may be wrong. Verify important points; each question is answered independently, so follow-ups are not supported by design."
-    )
 
     openai_api_key = st.text_input(
         "OpenAI API key",
@@ -899,10 +1125,10 @@ with st.container(border=True):
     )
 
     suggested_questions = [
-        "Which areas are highest opportunity in the current view?",
-        "Why is the recommended attraction attractive for the top area?",
-        "Which activation type should we prioritise and why?",
-        "What caveats should I mention to stakeholders?",
+        "Explain each customer segment to me.",
+        "Which areas are highest opportunity for LEGOLAND?",
+        "Where should Merlin target family annual passes?",
+        "Which attractions have the largest recommended audience?",
     ]
     suggestion_cols = st.columns(4)
     for index, question in enumerate(suggested_questions):
@@ -921,7 +1147,7 @@ with st.container(border=True):
 
     with st.form("stakeholder_chat_form", clear_on_submit=True):
         typed_question = st.text_input(
-            "Ask a question about the current dashboard view",
+            "Ask a question about the dashboard (AI could be wrong; follow-ups are not supported by design.)",
             placeholder="Example: Where should Merlin target family annual passes?",
         )
         submitted_question = st.form_submit_button("Ask assistant")
@@ -934,11 +1160,13 @@ with st.container(border=True):
         else:
             st.session_state["chat_messages"].append({"role": "user", "content": question_to_answer})
             dashboard_context = build_chatbot_context(
+                df,
                 filtered_df,
                 penetration_pct,
                 selected_attraction_values,
                 selected_segment_values,
                 selected_play_values,
+                area_search,
                 rank_limit,
                 top_area,
                 top_attraction,
