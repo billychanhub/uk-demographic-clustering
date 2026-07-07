@@ -476,6 +476,203 @@ def dataframe_preview(data: pd.DataFrame, columns: list, max_rows: int = 8) -> s
     return data.loc[:, available_columns].head(max_rows).to_csv(index=False)
 
 
+def normalize_question_text(value: str) -> str:
+    return " ".join("".join(character.lower() if character.isalnum() else " " for character in value).split())
+
+
+def mentioned_values(question: str, values: pd.Series) -> list:
+    question_text = normalize_question_text(question)
+    matches = []
+    for value in values.dropna().astype(str).unique():
+        normalized_value = normalize_question_text(value)
+        if len(normalized_value) >= 4 and normalized_value in question_text:
+            matches.append(value)
+    return matches
+
+
+def add_revenue_scenario(data: pd.DataFrame, penetration_pct: float) -> pd.DataFrame:
+    if data.empty:
+        return data.copy()
+    data = data.copy()
+    data["revenue_scenario"] = data["total_population"] * (penetration_pct / 100) * REVENUE_PER_VISITOR_GBP
+    return data
+
+
+def build_question_dataset_extract(
+    full_data: pd.DataFrame,
+    filtered_data: pd.DataFrame,
+    question: str,
+    penetration_pct: float,
+) -> str:
+    question_text = normalize_question_text(question)
+    current_view_terms = ["current", "filtered", "selected", "selection", "view", "dashboard", "these filters"]
+    full_dataset_terms = ["full", "overall", "all msoas", "entire", "national", "across the dataset"]
+    compare_terms = ["compare", "versus", "vs", "against"]
+
+    use_current_view = any(term in question_text for term in current_view_terms)
+    use_full_dataset = any(term in question_text for term in full_dataset_terms)
+    compare_scopes = any(term in question_text for term in compare_terms) and (use_current_view or use_full_dataset)
+    if use_current_view and not use_full_dataset:
+        base_data = filtered_data
+        base_label = "current dashboard filters"
+    else:
+        base_data = full_data
+        base_label = "full opportunity dataset"
+
+    area_matches = mentioned_values(question, full_data["area_name"])
+    attraction_matches = mentioned_values(question, full_data["recommended_attraction_name"])
+    activation_matches = mentioned_values(question, full_data["recommended_activation_type"])
+    segment_matches = mentioned_values(question, full_data["segment_label"])
+
+    query_data = base_data.copy()
+    applied_filters = []
+    if area_matches:
+        query_data = query_data.loc[query_data["area_name"].isin(area_matches)]
+        applied_filters.append("area_name in " + ", ".join(area_matches[:8]))
+    if attraction_matches:
+        query_data = query_data.loc[query_data["recommended_attraction_name"].isin(attraction_matches)]
+        applied_filters.append("recommended_attraction_name in " + ", ".join(attraction_matches[:8]))
+    if activation_matches:
+        query_data = query_data.loc[query_data["recommended_activation_type"].isin(activation_matches)]
+        applied_filters.append("recommended_activation_type in " + ", ".join(activation_matches[:8]))
+    if segment_matches:
+        query_data = query_data.loc[query_data["segment_label"].isin(segment_matches)]
+        applied_filters.append("segment_label in " + ", ".join(segment_matches[:8]))
+    if "family" in question_text and not segment_matches:
+        query_data = query_data.loc[query_data["segment_label"].str.contains("family", case=False, na=False)]
+        applied_filters.append("segment_label contains family")
+    if "legoland" in question_text and not attraction_matches:
+        query_data = query_data.loc[query_data["recommended_attraction_name"].str.contains("LEGOLAND", case=False, na=False)]
+        applied_filters.append("recommended_attraction_name contains LEGOLAND")
+
+    query_data = add_revenue_scenario(query_data, penetration_pct)
+    if query_data.empty:
+        return "\n".join(
+            [
+                "Question-specific dataset extract:",
+                f"- Primary source queried: {base_label}",
+                "- Matching rows after question-specific filters: 0",
+                f"- Filters inferred from question: {', '.join(applied_filters) if applied_filters else 'none'}",
+            ]
+        )
+
+    area_summary = (
+        query_data.groupby("area_name", as_index=False)
+        .agg(
+            msoa_count=("geo_code", "count"),
+            total_population=("total_population", "sum"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+            revenue_scenario=("revenue_scenario", "sum"),
+        )
+        .sort_values(["mean_opportunity_score", "total_population", "msoa_count"], ascending=[False, False, False])
+    )
+    attraction_summary = (
+        query_data.groupby("recommended_attraction_name", as_index=False)
+        .agg(
+            msoa_count=("geo_code", "count"),
+            total_population=("total_population", "sum"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+            revenue_scenario=("revenue_scenario", "sum"),
+        )
+        .sort_values(["total_population", "mean_opportunity_score"], ascending=[False, False])
+    )
+    activation_summary = (
+        query_data.groupby("recommended_activation_type", as_index=False)
+        .agg(
+            msoa_count=("geo_code", "count"),
+            total_population=("total_population", "sum"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+            revenue_scenario=("revenue_scenario", "sum"),
+        )
+        .sort_values(["total_population", "mean_opportunity_score"], ascending=[False, False])
+    )
+    segment_summary = (
+        query_data.groupby("segment_label", as_index=False)
+        .agg(
+            msoa_count=("geo_code", "count"),
+            total_population=("total_population", "sum"),
+            mean_opportunity_score=("overall_opportunity_score", "mean"),
+            revenue_scenario=("revenue_scenario", "sum"),
+        )
+        .sort_values(["total_population", "mean_opportunity_score"], ascending=[False, False])
+    )
+    top_msoas = query_data.sort_values("opportunity_rank").head(12)
+
+    extract_lines = [
+        "Question-specific dataset extract:",
+        f"- Primary source queried: {base_label}",
+        f"- Matching rows after question-specific filters: {len(query_data):,}",
+        f"- Matching population: {query_data['total_population'].sum():,.0f}",
+        f"- Mean opportunity score: {query_data['overall_opportunity_score'].mean():.1f}",
+        f"- Revenue scenario: {currency_number(query_data['revenue_scenario'].sum())}",
+        f"- Filters inferred from question: {', '.join(applied_filters) if applied_filters else 'none'}",
+        "",
+        "Top matching areas:",
+        dataframe_preview(
+            area_summary,
+            ["area_name", "msoa_count", "total_population", "mean_opportunity_score", "revenue_scenario"],
+            max_rows=12,
+        ),
+        "Top matching attractions:",
+        dataframe_preview(
+            attraction_summary,
+            [
+                "recommended_attraction_name",
+                "msoa_count",
+                "total_population",
+                "mean_opportunity_score",
+                "revenue_scenario",
+            ],
+            max_rows=12,
+        ),
+        "Matching activation types:",
+        dataframe_preview(
+            activation_summary,
+            ["recommended_activation_type", "msoa_count", "total_population", "mean_opportunity_score", "revenue_scenario"],
+            max_rows=8,
+        ),
+        "Top matching customer segments:",
+        dataframe_preview(
+            segment_summary,
+            ["segment_label", "msoa_count", "total_population", "mean_opportunity_score", "revenue_scenario"],
+            max_rows=12,
+        ),
+        "Highest ranked matching MSOAs:",
+        dataframe_preview(
+            top_msoas,
+            [
+                "geo_name",
+                "area_name",
+                "segment_label",
+                "overall_opportunity_score",
+                "opportunity_rank",
+                "recommended_attraction_name",
+                "recommended_activation_type",
+                "recommended_attraction_distance_miles",
+                "key_contributing_driver",
+                "total_population",
+                "revenue_scenario",
+            ],
+            max_rows=12,
+        ),
+    ]
+
+    if compare_scopes and not filtered_data.empty:
+        filtered_with_revenue = add_revenue_scenario(filtered_data, penetration_pct)
+        extract_lines.extend(
+            [
+                "",
+                "Current-filter comparison metrics:",
+                f"- Current filtered MSOAs: {len(filtered_with_revenue):,}",
+                f"- Current filtered population: {filtered_with_revenue['total_population'].sum():,.0f}",
+                f"- Current filtered mean opportunity score: {filtered_with_revenue['overall_opportunity_score'].mean():.1f}",
+                f"- Current filtered revenue scenario: {currency_number(filtered_with_revenue['revenue_scenario'].sum())}",
+            ]
+        )
+
+    return "\n".join(extract_lines)
+
+
 def build_chatbot_context(
     full_data: pd.DataFrame,
     filtered_data: pd.DataFrame,
@@ -666,17 +863,24 @@ def extract_openai_text(response_payload: dict) -> str:
     return "\n".join(text_parts).strip()
 
 
-def ask_openai_data_assistant(api_key: str, question: str, fact_sheet: str, dashboard_context: str) -> str:
+def ask_openai_data_assistant(
+    api_key: str,
+    question: str,
+    fact_sheet: str,
+    dashboard_context: str,
+    dataset_extract: str,
+) -> str:
     instructions = """
 You are a concise data Q&A assistant embedded in a Merlin UK growth opportunity dashboard.
 
-Answer only from the supplied project fact sheet, full opportunity dataset context, and current dashboard filter context.
+Answer only from the supplied project fact sheet, full opportunity dataset context, current dashboard filter context, and question-specific dataset extract.
 If the supplied data does not contain enough information, say: "I do not have enough information in the provided data to answer that."
 If the project fact sheet contains a preloaded answer for the stakeholder's question, use that answer as the primary source and adapt it lightly to the current dashboard context where relevant.
 Do not invent Merlin internal performance, current penetration, ticket prices, campaign results, customer behaviour, or competitor information.
 Do not answer questions unrelated to this Merlin UK opportunity analysis.
 Use plain English for senior stakeholders. Keep the answer under 160 words unless the user asks for detail.
 When giving numbers, make clear whether they come from the full opportunity dataset, the current dashboard filters, or illustrative revenue scenarios.
+Prioritise the question-specific dataset extract for questions about areas, attractions, segments, activation types, rankings, comparisons, or MSOA lists.
 If the question asks about the current view or selected filters, prioritise the current dashboard filter context. Otherwise, use the full opportunity dataset context.
 """
     user_input = f"""
@@ -685,6 +889,9 @@ Project fact sheet:
 
 Dashboard data context:
 {dashboard_context}
+
+Question-specific dataset extract:
+{dataset_extract}
 
 Stakeholder question:
 {question}
@@ -1172,6 +1379,12 @@ with st.container(border=True):
                 top_area,
                 top_attraction,
             )
+            dataset_extract = build_question_dataset_extract(
+                df,
+                filtered_df,
+                question_to_answer,
+                penetration_pct,
+            )
             with st.spinner("Asking the data assistant..."):
                 try:
                     assistant_answer = ask_openai_data_assistant(
@@ -1179,6 +1392,7 @@ with st.container(border=True):
                         question_to_answer,
                         project_fact_sheet,
                         dashboard_context,
+                        dataset_extract,
                     )
                 except Exception as exc:
                     assistant_answer = (
